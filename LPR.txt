@@ -1,0 +1,97 @@
+import cv2
+import pytesseract
+import os
+import re
+
+# OPTIONAL (Only if Windows Tesseract not added to PATH)
+# Uncomment and update if needed
+# pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
+
+def clean_text(text):
+    """
+    Cleans OCR output by removing unwanted characters.
+    """
+    text = text.upper()
+    text = re.sub(r'[^A-Z0-9]', '', text)
+    return text
+
+
+def detect_plate(image_path):
+    if not os.path.exists(image_path):
+        print(f"Image not found: {image_path}")
+        return
+
+    # Load Haar Cascade from OpenCV
+    plate_cascade = cv2.CascadeClassifier(
+        cv2.data.haarcascades + "haarcascade_russian_plate_number.xml"
+    )
+
+    if plate_cascade.empty():
+        print("Error loading Haar Cascade.")
+        return
+
+    # Read image
+    img = cv2.imread(image_path)
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+
+    # Detect license plates
+    plates = plate_cascade.detectMultiScale(
+        gray,
+        scaleFactor=1.1,
+        minNeighbors=4,
+        minSize=(100, 25)
+    )
+
+    if len(plates) == 0:
+        print(f"No plate detected in {image_path}")
+        return
+
+    for (x, y, w, h) in plates:
+        # Draw bounding box
+        cv2.rectangle(img, (x, y), (x + w, y + h), (0, 255, 0), 2)
+
+        # Crop plate region
+        plate_region = img[y:y+h, x:x+w]
+
+        # Convert to grayscale
+        plate_gray = cv2.cvtColor(plate_region, cv2.COLOR_BGR2GRAY)
+
+        # Apply threshold for better OCR
+        _, thresh = cv2.threshold(plate_gray, 150, 255, cv2.THRESH_BINARY)
+
+        # OCR with whitelist
+        plate_text = pytesseract.image_to_string(
+            thresh,
+            config='--psm 8 -c tessedit_char_whitelist=ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
+        )
+
+        cleaned_text = clean_text(plate_text)
+
+        print(f"Detected Number from {image_path}: {cleaned_text}")
+
+        # Display detected text on image
+        cv2.putText(
+            img,
+            cleaned_text,
+            (x, y - 10),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.9,
+            (0, 255, 0),
+            2
+        )
+
+        cv2.imshow(f"Plate - {image_path}", plate_region)
+
+    cv2.imshow(f"Result - {image_path}", img)
+    cv2.waitKey(0)
+    cv2.destroyAllWindows()
+from detection import detect_plate
+
+images = [
+    "images/Ford_Licenseplate.jpg",
+    "images/Hyundai_License.jpg"
+]
+
+for img in images:
+    print(f"\nProcessing: {img}")
+    detect_plate(img)
